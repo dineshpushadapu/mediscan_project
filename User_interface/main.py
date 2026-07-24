@@ -5,6 +5,7 @@ import numpy as np
 import tensorflow as tf
 from PIL import Image, ImageOps
 import streamlit as st
+import urllib.request
 
 warnings.filterwarnings("ignore")
 
@@ -45,7 +46,7 @@ st.markdown("""
 
 @st.cache_resource
 def load_ocular_model():
-    """Load VGG16 fine-tuned model using relative paths."""
+    """Load VGG16 fine-tuned model using relative paths with Git LFS pointer detection."""
     possible_paths = [
         os.path.join(os.path.dirname(__file__), "..", "model.h5"),
         os.path.join(os.path.dirname(__file__), "model.h5"),
@@ -63,6 +64,36 @@ def load_ocular_model():
         st.error("❌ Model file `model.h5` not found. Please ensure `model.h5` is in the project root directory.")
         return None
         
+    # Check if file is a Git LFS pointer text file (~130 bytes) instead of real 285MB model binary
+    file_size = os.path.getsize(model_path)
+    if file_size < 1000 * 1000: # Less than 1 MB
+        st.warning("⚠️ **Git LFS Pointer File Detected**")
+        st.error(
+            f"The file `model.h5` at `{model_path}` is only **{file_size} bytes**. "
+            "Render cloned the Git LFS pointer text file instead of downloading the 285 MB model binary."
+        )
+        st.info(
+            "### How to Fix on Render:\n"
+            "1. **Option A (Render Build Command)**: Set your Render Build Command to:\n"
+            "   `git lfs install && git lfs pull && pip install -r requirements.txt`\n\n"
+            "2. **Option B (Environment Variable)**: Set an Environment Variable in Render:\n"
+            "   `MODEL_URL = <direct link to model.h5>`\n"
+            "   The app will automatically download `model.h5` on boot."
+        )
+        
+        # Check if MODEL_URL environment variable is provided for auto-download
+        model_url = os.environ.get("MODEL_URL")
+        if model_url:
+            try:
+                st.info("⏬ Downloading full `model.h5` from environment URL...")
+                urllib.request.urlretrieve(model_url, model_path)
+                st.success("✅ Model downloaded successfully!")
+            except Exception as dl_err:
+                st.error(f"Failed to download model from MODEL_URL: {str(dl_err)}")
+                return None
+        else:
+            return None
+
     try:
         model = tf.keras.models.load_model(model_path)
         return model
